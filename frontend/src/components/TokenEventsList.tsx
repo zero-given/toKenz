@@ -9,9 +9,42 @@ interface TokenEventsListProps {
   onColorsChange: (colors: ThemeColors) => void;
 }
 
+type SortField = 'age' | 'holders' | 'liquidity' | 'safetyScore';
+
 const STORAGE_KEY = 'tokenListFilters';
 
 export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
+  // Performance metrics
+  const [fps, setFps] = createSignal(60);
+  const [memory, setMemory] = createSignal(0);
+  const [isConnected, setIsConnected] = createSignal(true);
+
+  // Update performance metrics
+  let lastTime = performance.now();
+  let frame = 0;
+
+  const updateMetrics = () => {
+    const now = performance.now();
+    frame++;
+    
+    if (now >= lastTime + 1000) {
+      setFps(Math.round((frame * 1000) / (now - lastTime)));
+      // Safely handle memory metrics
+      const memoryInfo = (performance as any).memory;
+      if (memoryInfo) {
+        setMemory(Math.round(memoryInfo.usedJSHeapSize / 1024 / 1024 * 100) / 100);
+      }
+      frame = 0;
+      lastTime = now;
+    }
+    
+    requestAnimationFrame(updateMetrics);
+  };
+
+  onMount(() => {
+    updateMetrics();
+  });
+
   const [expandedTokens, setExpandedTokens] = createSignal<Set<string>>(new Set());
   
   const toggleTokenExpansion = (tokenAddress: string) => {
@@ -93,6 +126,12 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
       if (currentFilters.hideWarning && token.riskLevel === 'warning') return false;
       if (currentFilters.showOnlySafe && token.riskLevel !== 'safe') return false;
       
+      // Apply min holders filter
+      if (currentFilters.minHolders > 0 && token.gpHolderCount < currentFilters.minHolders) return false;
+      
+      // Apply min liquidity filter
+      if (currentFilters.minLiquidity > 0 && token.hpLiquidityAmount < currentFilters.minLiquidity) return false;
+      
       // Search query
       if (currentFilters.searchQuery) {
         const query = currentFilters.searchQuery.toLowerCase();
@@ -110,12 +149,14 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
     result.sort((a, b) => {
       const sortBy = currentFilters.sortBy;
       let direction = -1; // Default to descending
-      let field = sortBy;
+      let field: SortField = 'age'; // Default field
 
       // Check if it's an ascending sort
       if (sortBy.endsWith('_asc')) {
         direction = 1;
-        field = sortBy.replace('_asc', '');
+        field = sortBy.replace('_asc', '') as SortField;
+      } else {
+        field = sortBy as SortField;
       }
       
       switch (field) {
@@ -141,16 +182,74 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
   // Virtual list setup for both views
   let parentRef: HTMLDivElement | undefined;
   
+  const estimateSize = (index: number) => {
+    const token = filteredTokens()[index];
+    if (!token) return 60;
+    
+    // Base height for compact view
+    if (!expandedTokens().has(token.tokenAddress)) {
+      return 60; // Compact row height
+    }
+    
+    // Expanded view height calculation
+    let height = 0;
+    height += 40; // Top padding
+    height += 60; // Top collapse button + margin
+    height += 60; // Status bubbles + margin
+    
+    // Warning reasons section (if any)
+    const warningCount = (token.gpIsProxy ? 1 : 0) + 
+                        (token.gpIsMintable ? 1 : 0) + 
+                        (token.gpHasProxyCalls ? 1 : 0) + 
+                        (token.gpCannotBuy ? 1 : 0) + 
+                        (token.gpCannotSellAll ? 1 : 0) + 
+                        (token.gpTradingCooldown ? 1 : 0) + 
+                        (token.gpTransferPausable ? 1 : 0) + 
+                        (token.gpSlippageModifiable ? 1 : 0) + 
+                        (token.gpHiddenOwner ? 1 : 0);
+    if (warningCount > 0) {
+      height += 80 + (warningCount * 24); // Header + warnings
+    }
+    
+    // Core sections
+    height += 300; // Trading Information
+    height += 400; // Contract Information (includes long addresses)
+    height += 200; // Security Settings
+    height += 300; // Holder Information
+    height += 200; // Additional Information
+    
+    // Dynamic sections
+    if (token.gpTrustList) height += 40;
+    if (token.gpOtherPotentialRisks) height += 40;
+    if (token.gpHolders) height += 40;
+    if (token.gpLpHolders) height += 40;
+    if (token.gpDexInfo) height += 40;
+    
+    // Charts section
+    height += 40; // Section padding
+    height += 40; // Liquidity chart header
+    height += 200; // Liquidity chart
+    height += 40; // Holders chart header
+    height += 200; // Holders chart
+    height += 40; // Section padding
+    
+    // History table
+    height += 40; // Table header
+    height += 200; // Table height
+    height += 40; // Table padding
+    
+    height += 60; // Bottom collapse button + margin
+    height += 40; // Bottom padding
+    
+    return height;
+  };
+
   const virtualizer = createVirtualizer({
     count: filteredTokens().length,
     getScrollElement: () => document.documentElement,
-    estimateSize: (index) => {
-      const token = filteredTokens()[index];
-      return expandedTokens().has(token?.tokenAddress) ? 2400 : 60;
-    },
+    estimateSize,
     overscan: 5,
-    paddingStart: 20,
-    paddingEnd: 20
+    scrollMargin: 300 // Account for the fixed header
   });
 
   const CompactRow: Component<{ token: Token }> = (props) => (
@@ -216,9 +315,14 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
   return (
     <div class="w-full max-w-[1820px] mx-auto px-6 pb-12 pt-24">
       {/* Filters and View Toggle */}
-      <div class="sticky top-20 z-10 mb-12 p-6 bg-black/80 backdrop-blur-sm rd-lg border border-gray-700">
-        <div class="mb-4">
+      <div class="sticky top-20 z-50 mb-12 p-6 bg-black/95 backdrop-blur-xl rd-lg border border-gray-700 shadow-xl">
+        <div class="mb-4 flex justify-between items-center">
           <div class="text-white text-lg fw-600">Token List</div>
+          <div class="flex gap-8 text-white/90">
+            <span>Total tokens: {props.tokens.length}</span>
+            <span>Filtered: {filteredTokens().length}</span>
+            <span>Virtual Items: {virtualizer.getVirtualItems().length}</span>
+          </div>
         </div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
           <input
@@ -278,10 +382,35 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
             </div>
           </div>
 
-          {/* View Toggle Button */}
-          <div class="col-span-1 flex justify-end">
+          {/* View Toggle Button and Filters */}
+          <div class="col-span-1 flex justify-end items-center gap-6 px-4">
+            {/* Min Holders Filter */}
+            <div class="flex items-center gap-1">
+              <span class="text-white/60 text-xs whitespace-nowrap">Min Holders:</span>
+              <input
+                type="number"
+                placeholder="0"
+                class="w-20 px-2 py-1 bg-gray-800 rd border border-gray-700 text-white text-sm"
+                value={filters().minHolders}
+                onInput={(e) => updateFilters(f => ({ ...f, minHolders: parseInt(e.currentTarget.value) || 0 }))}
+              />
+            </div>
+
+            {/* Min Liquidity Filter */}
+            <div class="flex items-center gap-1">
+              <span class="text-white/60 text-xs whitespace-nowrap">Min Liq($):</span>
+              <input
+                type="number"
+                placeholder="0"
+                class="w-20 px-2 py-1 bg-gray-800 rd border border-gray-700 text-white text-sm"
+                value={filters().minLiquidity}
+                onInput={(e) => updateFilters(f => ({ ...f, minLiquidity: parseInt(e.currentTarget.value) || 0 }))}
+              />
+            </div>
+
+            {/* View Toggle Button */}
             <button
-              class="flex items-center gap-2 px-4 py-2 bg-gray-700 hover:bg-gray-600 rd text-white transition-colors"
+              class="flex items-center gap-2 px-6 py-2 bg-gray-700 hover:bg-gray-600 rd text-white transition-colors whitespace-nowrap min-w-[160px]"
               onClick={() => {
                 const currentTokens = filteredTokens();
                 setExpandedTokens(prev => {
@@ -299,20 +428,25 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
                 const token = filteredTokens()[row.index];
                 return token && expandedTokens().has(token.tokenAddress);
               }) ? <List size={18} /> : <Layout size={18} />}
-              {virtualizer.getVirtualItems().some(row => {
+              <span>{virtualizer.getVirtualItems().some(row => {
                 const token = filteredTokens()[row.index];
                 return token && expandedTokens().has(token.tokenAddress);
-              }) ? 'Compact View' : 'Detailed View'}
+              }) ? 'Compact View' : 'Detailed View'}</span>
             </button>
           </div>
         </div>
       </div>
 
       {/* Virtual List Container */}
-      <div ref={parentRef} class="relative w-full">
+      <div 
+        ref={parentRef} 
+        class="relative w-full"
+        style={{
+          height: `${virtualizer.getTotalSize()}px`
+        }}
+      >
         <div
           style={{
-            height: `${virtualizer.getTotalSize()}px`,
             width: '100%',
             position: 'relative'
           }}
@@ -333,14 +467,18 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
                   width: '100%',
                   height: `${virtualRow.size}px`,
                   'box-sizing': 'border-box',
-                  padding: '4px'
+                  padding: '12px',
+                  'overflow-y': 'visible',
+                  'z-index': isExpanded ? 10 : 1,
+                  'transform': 'translate3d(0,0,0)',
+                  'will-change': 'transform'
                 }}
               >
                 {!isExpanded ? (
                   <CompactRow token={token} />
                 ) : (
-                  <div class="w-full h-full bg-black/40 backdrop-blur-sm rd-lg border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200">
-                    <div class="p-8">
+                  <div class="w-full h-full bg-black/40 backdrop-blur-sm rd-lg border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 relative">
+                    <div class="p-6 relative z-20">
                       <div class="flex justify-end mb-4">
                         <button 
                           class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rd text-sm text-white transition-colors"
@@ -383,11 +521,6 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
             );
           })}
         </div>
-      </div>
-      
-      {/* Debug info */}
-      <div class="sticky bottom-4 mt-12 p-4 bg-black/80 text-white/60 text-sm rd-lg">
-        Total tokens: {props.tokens.length}, Filtered: {filteredTokens().length}
       </div>
     </div>
   );
