@@ -1,171 +1,189 @@
-import { Component, createEffect, onCleanup } from 'solid-js';
+import { Component, createEffect } from 'solid-js';
+import { Line as Chart } from 'solid-chartjs';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  TimeScale,
+  Filler
+} from 'chart.js';
+import 'chartjs-adapter-date-fns';
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  TimeScale,
+  Filler
+);
+
 import type { Token } from '../types';
 
-interface TokenHistory {
-  timestamp: number;
-  hpLiquidity: number;
-  gpLiquidity: number;
-  totalLiquidity: number;
-  holderCount: number;
-  lpHolderCount: number;
-}
-
-interface TokenLiquidityChartProps {
+interface ChartProps {
   token: Token;
-  history?: TokenHistory[];
+  history: any[];
+  type: 'liquidity' | 'holders';
+  height?: number;
 }
 
-export const TokenLiquidityChart: Component<TokenLiquidityChartProps> = (props) => {
-  let canvasRef: HTMLCanvasElement | undefined;
-  
-  const drawChart = () => {
-    if (!canvasRef) return;
-    
-    const ctx = canvasRef.getContext('2d');
-    if (!ctx) return;
-    
-    // Clear canvas
-    ctx.clearRect(0, 0, canvasRef.width, canvasRef.height);
-    
-    // Set dimensions
-    const width = canvasRef.width;
-    const height = canvasRef.height;
-    const padding = 40; // Increased padding for labels
-    
-    // Get data points from history
-    const dataPoints = props.history?.map(h => h.totalLiquidity) || [];
-    const timestamps = props.history?.map(h => h.timestamp) || [];
-    
-    if (dataPoints.length === 0) {
-      ctx.fillStyle = '#6B7280';
-      ctx.font = '12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('No liquidity data available', width / 2, height / 2);
-      return;
-    }
-    
-    // Find min and max values
-    const minValue = Math.min(...dataPoints);
-    const maxValue = Math.max(...dataPoints);
-    
-    // Calculate scale
-    const xScale = (width - padding * 2) / (dataPoints.length - 1);
-    const yScale = (height - padding * 2) / (maxValue - minValue || 1);
-    
-    // Draw grid
-    ctx.strokeStyle = '#374151';
-    ctx.lineWidth = 1;
-    
-    // Vertical grid lines
-    for (let i = 0; i < dataPoints.length; i++) {
-      const x = padding + i * xScale;
-      ctx.beginPath();
-      ctx.moveTo(x, padding);
-      ctx.lineTo(x, height - padding);
-      ctx.stroke();
-      
-      // Draw x-axis labels (timestamps)
-      if (i % Math.ceil(dataPoints.length / 5) === 0) { // Show ~5 labels
-        const date = new Date(timestamps[i]);
-        ctx.fillStyle = '#6B7280';
-        ctx.font = '10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.save();
-        ctx.translate(x, height - padding + 15);
-        ctx.rotate(Math.PI / 4);
-        ctx.fillText(date.toLocaleTimeString(), 0, 0);
-        ctx.restore();
-      }
-    }
-    
-    // Horizontal grid lines
-    const gridLines = 5;
-    for (let i = 0; i <= gridLines; i++) {
-      const y = padding + (height - padding * 2) * (i / gridLines);
-      ctx.beginPath();
-      ctx.moveTo(padding, y);
-      ctx.lineTo(width - padding, y);
-      ctx.stroke();
-      
-      // Draw y-axis labels
-      const value = maxValue - ((maxValue - minValue) * (i / gridLines));
-      ctx.fillStyle = '#6B7280';
-      ctx.font = '10px sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText(`$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, padding - 5, y + 4);
-    }
-    
-    // Draw line chart
-    ctx.strokeStyle = '#8B5CF6';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    
-    dataPoints.forEach((value, index) => {
-      const x = padding + index * xScale;
-      const y = height - padding - (value - minValue) * yScale;
-      
-      if (index === 0) {
-        ctx.moveTo(x, y);
-      } else {
-        ctx.lineTo(x, y);
-      }
-    });
-    
-    ctx.stroke();
-    
-    // Draw points
-    ctx.fillStyle = '#8B5CF6';
-    dataPoints.forEach((value, index) => {
-      const x = padding + index * xScale;
-      const y = height - padding - (value - minValue) * yScale;
-      
-      ctx.beginPath();
-      ctx.arc(x, y, 4, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  };
-  
-  // Set up resize observer
-  createEffect(() => {
-    if (!canvasRef) return;
-    
-    const observer = new ResizeObserver(() => {
-      if (!canvasRef) return;
-      
-      // Set canvas size
-      const rect = canvasRef.getBoundingClientRect();
-      canvasRef.width = rect.width * window.devicePixelRatio;
-      canvasRef.height = rect.height * window.devicePixelRatio;
-      
-      // Scale context
-      const ctx = canvasRef.getContext('2d');
-      if (ctx) {
-        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      }
-      
-      drawChart();
-    });
-    
-    observer.observe(canvasRef);
-    
-    onCleanup(() => {
-      observer.disconnect();
-    });
-  });
+export const TokenChart: Component<ChartProps> = (props) => {
+  const chartData = () => {
+    if (!props.history?.length) return null;
 
-  // Redraw when history changes
-  createEffect(() => {
-    if (props.history) {
-      drawChart();
+    const data = props.history.map(record => ({
+      x: new Date(record.timestamp),
+      y: props.type === 'liquidity' ? record.totalLiquidity : record.holderCount
+    }));
+
+    return {
+      datasets: [{
+        label: props.type === 'liquidity' ? 'Liquidity ($)' : 'Holders',
+        data: data,
+        borderColor: props.type === 'liquidity' ? '#3182CE' : '#805AD5',
+        backgroundColor: props.type === 'liquidity' ? '#3182CE33' : '#805AD533',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 2,
+        pointHoverRadius: 4,
+        pointBackgroundColor: props.type === 'liquidity' ? '#3182CE' : '#805AD5',
+        pointBorderColor: '#fff',
+        pointBorderWidth: 1,
+      }]
+    };
+  };
+
+  const getYAxisConfig = () => {
+    if (!props.history?.length) return {};
+
+    const values = props.history.map(record => 
+      props.type === 'liquidity' ? record.totalLiquidity : record.holderCount
+    );
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    const range = max - min;
+
+    // Add padding to the range
+    const paddingFactor = 0.1; // 10% padding
+    const paddedMin = Math.max(0, min - (range * paddingFactor));
+    const paddedMax = max + (range * paddingFactor);
+
+    return {
+      min: paddedMin,
+      max: paddedMax,
+      ticks: {
+        count: 6, // More tick marks for better granularity
+        color: '#9CA3AF',
+        font: { size: 11 },
+        callback: (value: number) => {
+          if (props.type === 'liquidity') {
+            // Use K/M/B notation for large numbers
+            if (value >= 1e9) return `$${(value / 1e9).toFixed(1)}B`;
+            if (value >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
+            if (value >= 1e3) return `$${(value / 1e3).toFixed(1)}K`;
+            return `$${value.toFixed(0)}`;
+          }
+          return value.toLocaleString();
+        }
+      }
+    };
+  };
+
+  const options = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: {
+      duration: 750,
+      easing: 'easeInOutQuart'
+    },
+    interaction: {
+      mode: 'index',
+      intersect: false,
+    },
+    plugins: {
+      legend: {
+        display: false
+      },
+      tooltip: {
+        backgroundColor: 'rgba(0,0,0,0.8)',
+        padding: 12,
+        titleColor: '#fff',
+        titleFont: {
+          size: 13,
+          weight: 'bold'
+        },
+        bodyFont: {
+          size: 12
+        },
+        callbacks: {
+          label: (context: any) => {
+            const value = context.raw.y;
+            return props.type === 'liquidity' 
+              ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+              : value.toLocaleString();
+          },
+          title: (tooltipItems: any[]) => {
+            const date = new Date(tooltipItems[0].raw.x);
+            return date.toLocaleString();
+          }
+        }
+      }
+    },
+    scales: {
+      x: {
+        type: 'time',
+        time: {
+          unit: 'minute',
+          displayFormats: {
+            minute: 'HH:mm'
+          }
+        },
+        grid: {
+          display: true,
+          color: 'rgba(75,85,99,0.1)'
+        },
+        ticks: {
+          maxRotation: 0,
+          autoSkip: true,
+          maxTicksLimit: 8,
+          color: '#9CA3AF',
+          font: {
+            size: 11
+          }
+        }
+      },
+      y: {
+        ...getYAxisConfig(),
+        grid: {
+          display: true,
+          color: 'rgba(75,85,99,0.1)'
+        }
+      }
     }
-  });
-  
+  };
+
   return (
-    <div class="w-full h-[200px] relative">
-      <canvas
-        ref={canvasRef}
-        class="w-full h-full"
-      />
+    <div class="w-full h-full">
+      {chartData() && (
+        <Chart 
+          type="line"
+          data={chartData()}
+          options={options}
+          width={props.height || 200}
+          height={props.height || 200}
+        />
+      )}
     </div>
   );
-}; 
+};
+
+// For backward compatibility
+export const TokenLiquidityChart: Component<{ token: Token; history: any[] }> = (props) => (
+  <TokenChart token={props.token} history={props.history} type="liquidity" />
+); 
