@@ -10,18 +10,13 @@ const server = http.createServer(app);
 const wss = new WebSocket.Server({ 
   server,
   verifyClient: (info, cb) => {
-    const origin = info.origin;
-    // Allow any localhost connection
-    if (origin && (origin.startsWith('http://localhost:') || origin.startsWith('https://localhost:'))) {
-      cb(true);
-    } else {
-      console.log('Rejected WebSocket connection from origin:', origin);
-      cb(false, 403, 'Forbidden - Origin not allowed');
-    }
+    // Allow connections from any origin
+    cb(true);
   }
 });
 
 const PORT = 3002;
+const HOST = '0.0.0.0'; // Listen on all network interfaces
 const HEARTBEAT_INTERVAL = 30000; // 30 seconds
 const CLIENT_TIMEOUT = 35000; // 35 seconds
 
@@ -1040,8 +1035,8 @@ async function testDataRetrieval() {
 
 // Start the server
 testDataRetrieval().then(() => {
-  server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  server.listen(PORT, HOST, () => {
+    console.log(`Server running on ${HOST}:${PORT}`);
     updateStatus('Server started, waiting for connections...', 'yellow');
   });
 });
