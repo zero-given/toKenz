@@ -21,7 +21,9 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
-    polyfillModulePreload: false,
+    modulePreload: {
+      polyfill: false
+    },
     sourcemap: true,
     minify: 'esbuild',
     cssMinify: true,
@@ -32,12 +34,27 @@ export default defineConfig({
           'solid': ['solid-js'],
           'solid-web': ['solid-js/web'],
           'virtual': ['virtual:uno.css'],
+          'chart': ['chart.js', 'chartjs-adapter-date-fns'],
+          'utils': ['date-fns', 'flexsearch', 'lz-string']
         },
       },
     },
+    chunkSizeWarningLimit: 600,
   },
   optimizeDeps: {
-    include: ['solid-js'],
+    include: [
+      'solid-js',
+      'chart.js',
+      'date-fns',
+      'flexsearch',
+      'lz-string',
+      'chartjs-adapter-date-fns'
+    ],
     exclude: ['@unocss/reset'],
+    force: false,
+    esbuildOptions: {
+      target: 'esnext',
+      treeShaking: true,
+    }
   },
 });

@@ -2445,17 +2445,55 @@ if __name__ == "__main__":
     print(f"Start time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
     
     try:
-        # Create session folder
-        folder_name = f"{datetime.now().strftime('%B %d')} - Session {get_next_session_number()}"
-        os.makedirs(folder_name, exist_ok=True)
+        # Set the event loop policy for Windows
+        if sys.platform == 'win32':
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        
+        # Get current date
+        current_date = datetime.now().strftime('%B %d')
+        
+        # List existing sessions
+        existing_sessions = [d for d in os.listdir() if d.startswith(current_date)]
+        
+        # Ask user about session choice
+        print("\nNEW SESSION? [Y/n]", end=" ")
+        choice = input() or "Y"  # Default to Y if user just hits enter
+        
+        if choice.upper() == "Y":
+            # Create new session folder
+            folder_name = f"{current_date} - Session {get_next_session_number()}"
+            os.makedirs(folder_name, exist_ok=True)
+        else:
+            if not existing_sessions:
+                print("No existing sessions found for today. Creating new session.")
+                folder_name = f"{current_date} - Session {get_next_session_number()}"
+                os.makedirs(folder_name, exist_ok=True)
+            else:
+                print("\nExisting sessions:")
+                for i, session in enumerate(existing_sessions, 1):
+                    print(f"{i}. {session}")
+                
+                while True:
+                    try:
+                        choice = int(input("\nSelect session number: "))
+                        if 1 <= choice <= len(existing_sessions):
+                            folder_name = existing_sessions[choice - 1]
+                            break
+                        print("Invalid selection. Please try again.")
+                    except ValueError:
+                        print("Please enter a valid number.")
+        
+        print(f"\nUsing session folder: {folder_name}")
         
         print("Initializing scanner...")
         main = TokenTrackerMain("config.json", folder_name)
         
-        # Run async initialization and main loop
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(main.async_init())
-        loop.run_until_complete(main.main_loop())
+        # Create and run new event loop
+        async def run_main():
+            await main.async_init()
+            await main.main_loop()
+        
+        asyncio.run(run_main())
         
     except KeyboardInterrupt:
         print("\n\nShutting down gracefully...")
@@ -2465,6 +2503,3 @@ if __name__ == "__main__":
         print("\nFatal error:", str(e))
         print("Full traceback:")
         traceback.print_exc()
-    finally:
-        if 'loop' in locals():
-            loop.close()
