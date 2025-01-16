@@ -188,7 +188,7 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
     
     // Base height for compact view
     if (!expandedTokens().has(token.tokenAddress)) {
-      return 60; // Compact row height
+      return 84; // Increased from 60 to account for padding (60 + 24)
     }
     
     // Expanded view height calculation
@@ -253,7 +253,7 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
   });
 
   const CompactRow: Component<{ token: Token }> = (props) => (
-    <div class={`w-full bg-black/40 backdrop-blur-sm rd-lg border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 p-4 grid grid-cols-12 gap-4 items-center text-white`}>
+    <div class={`w-full bg-black/40 backdrop-blur-sm rd-lg border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 p-4 grid grid-cols-12 gap-4 items-center text-white mb-6`}>
       <div class="col-span-2 truncate">
         <div class="fw-600">{props.token.tokenName}</div>
         <div class="text-sm text-gray-400">{props.token.tokenSymbol}</div>
@@ -440,15 +440,16 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
       {/* Virtual List Container */}
       <div 
         ref={parentRef} 
-        class="relative w-full"
+        class="relative w-full min-h-screen"
         style={{
-          height: `${virtualizer.getTotalSize()}px`
+          height: `${virtualizer.getTotalSize() + 500}px`
         }}
       >
         <div
           style={{
             width: '100%',
-            position: 'relative'
+            position: 'relative',
+            height: '100%'
           }}
         >
           {virtualizer.getVirtualItems().map((virtualRow) => {
@@ -467,7 +468,7 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
                   width: '100%',
                   height: `${virtualRow.size}px`,
                   'box-sizing': 'border-box',
-                  padding: '12px',
+                  padding: '12px 12px 24px 12px',
                   'overflow-y': 'visible',
                   'z-index': isExpanded ? 10 : 1,
                   'transform': 'translate3d(0,0,0)',

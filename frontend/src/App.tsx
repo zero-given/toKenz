@@ -11,6 +11,9 @@ const wsWorker = new Worker(
   { type: 'module' }
 );
 
+const DEFAULT_BG_COLOR = '#1a1a1a';
+const BG_COLOR_STORAGE_KEY = 'app_bg_color';
+
 const App: Component = () => {
   // State management using solid-js primitives
   const [tokens, setTokens] = createStore<{ items: Record<string, Token> }>({ items: {} });
@@ -19,6 +22,19 @@ const App: Component = () => {
   const [isLoading, setIsLoading] = createSignal(true);
   const [hasReceivedInitialTokens, setHasReceivedInitialTokens] = createSignal(false);
   
+  // Load saved background color or use default
+  const [bgColor, setBgColor] = createSignal(localStorage.getItem(BG_COLOR_STORAGE_KEY) || DEFAULT_BG_COLOR);
+
+  // Save background color to localStorage when it changes
+  createEffect(() => {
+    const color = bgColor();
+    localStorage.setItem(BG_COLOR_STORAGE_KEY, color);
+  });
+
+  const resetBgColor = () => {
+    setBgColor(DEFAULT_BG_COLOR);
+  };
+
   // Performance metrics state
   const [performanceMetrics, setPerformanceMetrics] = createSignal<PerformanceMetrics>({
     lastRenderTime: 0,
@@ -153,9 +169,9 @@ const App: Component = () => {
   
   return (
     <div 
-      class="min-h-screen bg-gradient-to-br"
+      class="min-h-screen"
       style={{
-        'background-image': `linear-gradient(to bottom right, ${colors().bgGradientColor1}, ${colors().bgGradientColor2})`,
+        'background-color': bgColor(),
         'background-attachment': 'fixed'
       }}
     >
@@ -164,6 +180,9 @@ const App: Component = () => {
         isLoading={isLoading()}
         error={connectionError()}
         metrics={performanceMetrics()}
+        onBgColorChange={setBgColor}
+        onResetBgColor={resetBgColor}
+        currentBgColor={bgColor()}
       />
       
       <main class="w-full">

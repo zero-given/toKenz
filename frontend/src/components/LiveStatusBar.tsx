@@ -6,6 +6,9 @@ interface LiveStatusBarProps {
   isLoading: boolean;
   error: string | null;
   metrics: PerformanceMetrics;
+  onBgColorChange: (color: string) => void;
+  onResetBgColor: () => void;
+  currentBgColor: string;
 }
 
 export const LiveStatusBar: Component<LiveStatusBarProps> = (props) => {
@@ -30,6 +33,23 @@ export const LiveStatusBar: Component<LiveStatusBarProps> = (props) => {
         <div>FPS: {props.metrics.fps.toFixed(1)}</div>
         <div>Memory: {props.metrics.memory.toFixed(1)} MB</div>
         <div>Render Time: {props.metrics.lastRenderTime.toFixed(1)}ms</div>
+        <div class="flex items-center space-x-2">
+          <label for="bgColorPicker" class="cursor-pointer">BG Color:</label>
+          <input
+            id="bgColorPicker"
+            type="color"
+            class="w-6 h-6 rd cursor-pointer bg-transparent"
+            value={props.currentBgColor}
+            onChange={(e) => props.onBgColorChange(e.currentTarget.value)}
+          />
+          <button
+            onClick={props.onResetBgColor}
+            class="ml-1 text-gray-400 hover:text-gray-200 transition-colors"
+            title="Reset to default color"
+          >
+            ×
+          </button>
+        </div>
       </div>
     </div>
   );
