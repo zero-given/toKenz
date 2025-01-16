@@ -1,4 +1,4 @@
-import { Component, createSignal, createMemo } from 'solid-js';
+import { Component, createSignal, createMemo, onMount } from 'solid-js';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import { TokenEventCard } from './TokenEventCard';
 import { Layout, List } from 'lucide-solid';
@@ -8,6 +8,8 @@ interface TokenEventsListProps {
   tokens: Token[];
   onColorsChange: (colors: ThemeColors) => void;
 }
+
+const STORAGE_KEY = 'tokenListFilters';
 
 export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
   const [expandedTokens, setExpandedTokens] = createSignal<Set<string>>(new Set());
@@ -24,23 +26,44 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
     });
   };
 
-  // Filter state
-  const [filters, setFilters] = createSignal<FilterState>({
-    minHolders: 0,
-    minLiquidity: 0,
-    hideHoneypots: false,
-    showOnlyHoneypots: false,
-    hideDanger: false,
-    hideWarning: false,
-    showOnlySafe: false,
-    searchQuery: '',
-    sortBy: 'age',
-    sortDirection: 'desc',
-    maxRecords: 50,
-    hideStagnantHolders: false,
-    hideStagnantLiquidity: false,
-    stagnantRecordCount: 10
-  });
+  // Load saved filters from localStorage or use defaults
+  const getSavedFilters = (): FilterState => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error('Error parsing saved filters:', e);
+      }
+    }
+    return {
+      minHolders: 0,
+      minLiquidity: 0,
+      hideHoneypots: false,
+      showOnlyHoneypots: false,
+      hideDanger: false,
+      hideWarning: false,
+      showOnlySafe: false,
+      searchQuery: '',
+      sortBy: 'age',
+      sortDirection: 'desc',
+      maxRecords: 50,
+      hideStagnantHolders: false,
+      hideStagnantLiquidity: false,
+      stagnantRecordCount: 10
+    };
+  };
+
+  const [filters, setFilters] = createSignal<FilterState>(getSavedFilters());
+
+  // Save filters whenever they change
+  const updateFilters = (newFilters: FilterState | ((prev: FilterState) => FilterState)) => {
+    setFilters(prev => {
+      const updated = typeof newFilters === 'function' ? newFilters(prev) : newFilters;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   // Calculate numeric risk score
   const getRiskScore = (token: Token): number => {
@@ -202,12 +225,14 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
             type="text"
             placeholder="Search tokens..."
             class="px-3 py-2 bg-gray-800 rd border border-gray-700 text-white col-span-2"
-            onInput={(e) => setFilters(f => ({ ...f, searchQuery: e.currentTarget.value }))}
+            value={filters().searchQuery}
+            onInput={(e) => updateFilters(f => ({ ...f, searchQuery: e.currentTarget.value }))}
           />
           
           <select
             class="px-3 py-2 bg-gray-800 rd border border-gray-700 text-white col-span-2"
-            onChange={(e) => setFilters(f => ({ ...f, sortBy: e.currentTarget.value as any }))}
+            value={filters().sortBy}
+            onChange={(e) => updateFilters(f => ({ ...f, sortBy: e.currentTarget.value as any }))}
           >
             <option value="age">Sort by Age (Newest)</option>
             <option value="age_asc">Sort by Age (Oldest)</option>
@@ -226,7 +251,7 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
                   type="checkbox"
                   id="hideHoneypots"
                   checked={filters().hideHoneypots}
-                  onChange={(e) => setFilters(f => ({ ...f, hideHoneypots: e.currentTarget.checked }))}
+                  onChange={(e) => updateFilters(f => ({ ...f, hideHoneypots: e.currentTarget.checked }))}
                 />
                 <label for="hideHoneypots" class="text-white/90">Hide Honeypots</label>
               </div>
@@ -236,7 +261,7 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
                   type="checkbox"
                   id="hideWarning"
                   checked={filters().hideWarning}
-                  onChange={(e) => setFilters(f => ({ ...f, hideWarning: e.currentTarget.checked }))}
+                  onChange={(e) => updateFilters(f => ({ ...f, hideWarning: e.currentTarget.checked }))}
                 />
                 <label for="hideWarning" class="text-white/90">Hide Warning</label>
               </div>
@@ -246,7 +271,7 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
                   type="checkbox"
                   id="hideDanger"
                   checked={filters().hideDanger}
-                  onChange={(e) => setFilters(f => ({ ...f, hideDanger: e.currentTarget.checked }))}
+                  onChange={(e) => updateFilters(f => ({ ...f, hideDanger: e.currentTarget.checked }))}
                 />
                 <label for="hideDanger" class="text-white/90">Hide Danger</label>
               </div>
