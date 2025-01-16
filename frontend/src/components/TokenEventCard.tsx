@@ -1,4 +1,4 @@
-import { Component, Show } from 'solid-js';
+import { Component, Show, createSignal, onMount } from 'solid-js';
 import { Shield, Info, Activity, FileText, Lock, Users } from 'lucide-solid';
 import type { Token, TokenCardProps } from '../types';
 import { TokenLiquidityChart } from './TokenLiquidityChart';
@@ -25,7 +25,36 @@ const Field: Component<{ label: string; value: any; truncate?: boolean }> = (pro
   </div>
 );
 
+interface TokenHistory {
+  timestamp: number;
+  hpLiquidity: number;
+  gpLiquidity: number;
+  totalLiquidity: number;
+  holderCount: number;
+  lpHolderCount: number;
+}
+
 export const TokenEventCard: Component<TokenCardProps> = (props) => {
+  const [history, setHistory] = createSignal<TokenHistory[]>([]);
+  const [isLoading, setIsLoading] = createSignal(true);
+  const [error, setError] = createSignal<string | null>(null);
+
+  onMount(async () => {
+    try {
+      const response = await fetch(`/api/tokens/${props.token.tokenAddress}/history`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch token history');
+      }
+      const data = await response.json();
+      setHistory(data.history);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unknown error occurred');
+      console.error('Error fetching token history:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  });
+
   const getWarningReasons = () => {
     const reasons = [];
     
@@ -223,6 +252,46 @@ export const TokenEventCard: Component<TokenCardProps> = (props) => {
         <SectionHeader icon={<Activity size={20} />} title="Liquidity History" />
         <div class="mt-3">
           <TokenLiquidityChart token={props.token} />
+        </div>
+      </div>
+
+      {/* Liquidity History */}
+      <div class="mt-8">
+        <div class="flex items-center gap-2 mb-4">
+          <Activity size={18} class="text-blue-400" />
+          <h3 class="text-lg fw-600 text-white">Liquidity History</h3>
+        </div>
+        <div class="bg-black/20 p-4 rd">
+          {isLoading() ? (
+            <div class="text-gray-400">Loading history...</div>
+          ) : error() ? (
+            <div class="text-red-400">{error()}</div>
+          ) : history().length === 0 ? (
+            <div class="text-gray-400">No history available</div>
+          ) : (
+            <div class="max-h-[300px] overflow-y-auto">
+              <table class="w-full text-sm">
+                <thead class="sticky top-0 bg-black/80">
+                  <tr class="text-gray-400">
+                    <th class="text-left py-2">Time</th>
+                    <th class="text-right py-2">Liquidity</th>
+                    <th class="text-right py-2">Holders</th>
+                    <th class="text-right py-2">LP Holders</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {history().map((record) => (
+                    <tr class="text-white border-t border-gray-800">
+                      <td class="py-2">{new Date(record.timestamp).toLocaleString()}</td>
+                      <td class="text-right">${record.totalLiquidity.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td class="text-right">{record.holderCount.toLocaleString()}</td>
+                      <td class="text-right">{record.lpHolderCount.toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
