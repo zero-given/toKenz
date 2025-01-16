@@ -1,8 +1,18 @@
 import { Component, createEffect, onCleanup } from 'solid-js';
 import type { Token } from '../types';
 
+interface TokenHistory {
+  timestamp: number;
+  hpLiquidity: number;
+  gpLiquidity: number;
+  totalLiquidity: number;
+  holderCount: number;
+  lpHolderCount: number;
+}
+
 interface TokenLiquidityChartProps {
   token: Token;
+  history?: TokenHistory[];
 }
 
 export const TokenLiquidityChart: Component<TokenLiquidityChartProps> = (props) => {
@@ -20,12 +30,11 @@ export const TokenLiquidityChart: Component<TokenLiquidityChartProps> = (props) 
     // Set dimensions
     const width = canvasRef.width;
     const height = canvasRef.height;
-    const padding = 20;
+    const padding = 40; // Increased padding for labels
     
-    // Calculate liquidity data points
-    const dataPoints = [
-      props.token.hp_liquidity_amount
-    ];
+    // Get data points from history
+    const dataPoints = props.history?.map(h => h.totalLiquidity) || [];
+    const timestamps = props.history?.map(h => h.timestamp) || [];
     
     if (dataPoints.length === 0) {
       ctx.fillStyle = '#6B7280';
@@ -44,7 +53,7 @@ export const TokenLiquidityChart: Component<TokenLiquidityChartProps> = (props) 
     const yScale = (height - padding * 2) / (maxValue - minValue || 1);
     
     // Draw grid
-    ctx.strokeStyle = '#E5E7EB';
+    ctx.strokeStyle = '#374151';
     ctx.lineWidth = 1;
     
     // Vertical grid lines
@@ -54,6 +63,19 @@ export const TokenLiquidityChart: Component<TokenLiquidityChartProps> = (props) 
       ctx.moveTo(x, padding);
       ctx.lineTo(x, height - padding);
       ctx.stroke();
+      
+      // Draw x-axis labels (timestamps)
+      if (i % Math.ceil(dataPoints.length / 5) === 0) { // Show ~5 labels
+        const date = new Date(timestamps[i]);
+        ctx.fillStyle = '#6B7280';
+        ctx.font = '10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.save();
+        ctx.translate(x, height - padding + 15);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillText(date.toLocaleTimeString(), 0, 0);
+        ctx.restore();
+      }
     }
     
     // Horizontal grid lines
@@ -70,7 +92,7 @@ export const TokenLiquidityChart: Component<TokenLiquidityChartProps> = (props) 
       ctx.fillStyle = '#6B7280';
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'right';
-      ctx.fillText(`$${value.toFixed(2)}`, padding - 5, y + 4);
+      ctx.fillText(`$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`, padding - 5, y + 4);
     }
     
     // Draw line chart
@@ -129,6 +151,13 @@ export const TokenLiquidityChart: Component<TokenLiquidityChartProps> = (props) 
     onCleanup(() => {
       observer.disconnect();
     });
+  });
+
+  // Redraw when history changes
+  createEffect(() => {
+    if (props.history) {
+      drawChart();
+    }
   });
   
   return (

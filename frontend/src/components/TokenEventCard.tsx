@@ -34,6 +34,8 @@ interface TokenHistory {
   lpHolderCount: number;
 }
 
+const API_BASE_URL = 'http://localhost:3002'; // Match the backend server URL
+
 export const TokenEventCard: Component<TokenCardProps> = (props) => {
   const [history, setHistory] = createSignal<TokenHistory[]>([]);
   const [isLoading, setIsLoading] = createSignal(true);
@@ -41,15 +43,29 @@ export const TokenEventCard: Component<TokenCardProps> = (props) => {
 
   onMount(async () => {
     try {
-      const response = await fetch(`/api/tokens/${props.token.tokenAddress}/history`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch token history');
+      const response = await fetch(`${API_BASE_URL}/api/tokens/${props.token.tokenAddress}/history`);
+      
+      // Check if response is JSON
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        throw new Error('API response was not JSON');
       }
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to fetch token history');
+      }
+
       const data = await response.json();
+      if (!data.history || !Array.isArray(data.history)) {
+        throw new Error('Invalid history data received');
+      }
+
+      console.log('Received history data:', data); // Debug log
       setHistory(data.history);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error occurred');
       console.error('Error fetching token history:', err);
+      setError(err instanceof Error ? err.message : 'Unknown error occurred');
     } finally {
       setIsLoading(false);
     }
@@ -251,7 +267,7 @@ export const TokenEventCard: Component<TokenCardProps> = (props) => {
       <div class="flex-none">
         <SectionHeader icon={<Activity size={20} />} title="Liquidity History" />
         <div class="mt-3">
-          <TokenLiquidityChart token={props.token} />
+          <TokenLiquidityChart token={props.token} history={history()} />
         </div>
       </div>
 
