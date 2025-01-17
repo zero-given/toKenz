@@ -1,7 +1,8 @@
-import { Component, createSignal, createMemo, onMount } from 'solid-js';
+import { Component, createSignal, createMemo, onMount, createEffect } from 'solid-js';
 import { createVirtualizer } from '@tanstack/solid-virtual';
 import { TokenEventCard } from './TokenEventCard';
 import { Layout, List } from 'lucide-solid';
+import { TrendBadge } from './TrendBadge';
 import type { Token, FilterState, ThemeColors } from '../types';
 
 interface TokenEventsListProps {
@@ -89,29 +90,6 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
 
   const [filters, setFilters] = createSignal<FilterState>(getSavedFilters());
 
-  // Save filters whenever they change
-  const updateFilters = (newFilters: FilterState | ((prev: FilterState) => FilterState)) => {
-    setFilters(prev => {
-      const updated = typeof newFilters === 'function' ? newFilters(prev) : newFilters;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  // Calculate numeric risk score
-  const getRiskScore = (token: Token): number => {
-    switch (token.riskLevel) {
-      case 'safe':
-        return 2;
-      case 'warning':
-        return 1;
-      case 'danger':
-        return 0;
-      default:
-        return 0;
-    }
-  };
-
   // Memoized filtered and sorted tokens
   const filteredTokens = createMemo(() => {
     console.log('TokenEventsList: Filtering tokens:', props.tokens.length);
@@ -179,9 +157,12 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
     return result.slice(0, currentFilters.maxRecords);
   });
 
-  // Virtual list setup for both views
+  // Create a signal to force virtualizer recreation
+  const [virtualizerKey, setVirtualizerKey] = createSignal(0);
+
+  // Virtual list setup
   let parentRef: HTMLDivElement | undefined;
-  
+
   const estimateSize = (index: number) => {
     const token = filteredTokens()[index];
     if (!token) return 60;
@@ -244,63 +225,165 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
     return height;
   };
 
-  const virtualizer = createVirtualizer({
-    count: filteredTokens().length,
-    getScrollElement: () => document.documentElement,
-    estimateSize,
-    overscan: 5,
-    scrollMargin: 300 // Account for the fixed header
+  // Memoize the virtualizer creation
+  const virtualizer = createMemo(() => {
+    const key = virtualizerKey(); // Add dependency on key
+    const tokens = filteredTokens(); // Add dependency on filtered tokens
+    
+    return createVirtualizer({
+      count: tokens.length,
+      getScrollElement: () => document.documentElement,
+      estimateSize,
+      overscan: 5,
+      scrollMargin: 300
+    });
   });
 
-  const CompactRow: Component<{ token: Token }> = (props) => (
-    <div class={`w-full bg-black/40 backdrop-blur-sm rd-lg border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 p-4 grid grid-cols-12 gap-4 items-center text-white mb-6`}>
-      <div class="col-span-2 truncate">
-        <div class="fw-600">{props.token.tokenName}</div>
-        <div class="text-sm text-gray-400">{props.token.tokenSymbol}</div>
-      </div>
-      <div class="col-span-2 truncate text-sm">
-        <div class="text-gray-400">Address:</div>
-        <div>{props.token.tokenAddress.slice(0, 8)}...{props.token.tokenAddress.slice(-6)}</div>
-      </div>
-      <div class="col-span-1 text-sm">
-        <div class="text-gray-400">Age:</div>
-        <div>{props.token.tokenAgeHours.toFixed(1)}h</div>
-      </div>
-      <div class="col-span-1 text-sm">
-        <div class="text-gray-400">Liquidity:</div>
-        <div>${props.token.hpLiquidityAmount.toLocaleString()}</div>
-      </div>
-      <div class="col-span-1 text-sm">
-        <div class="text-gray-400">Holders:</div>
-        <div>{props.token.gpHolderCount.toLocaleString()}</div>
-      </div>
-      <div class="col-span-1 text-sm">
-        <div class="text-gray-400">Buy Tax:</div>
-        <div>{props.token.gpBuyTax}%</div>
-      </div>
-      <div class="col-span-1 text-sm">
-        <div class="text-gray-400">Sell Tax:</div>
-        <div>{props.token.gpSellTax}%</div>
-      </div>
-      <div class="col-span-2">
-        <div class={`text-center px-3 py-1 rd-full text-sm fw-600 ${
-          props.token.riskLevel === 'safe' ? 'bg-green-100 text-green-800 border border-green-200' :
-          props.token.riskLevel === 'warning' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
-          'bg-red-100 text-red-800 border border-red-200'
-        }`}>
-          {props.token.hpIsHoneypot ? 'HONEYPOT' : props.token.riskLevel.toUpperCase()}
+  // Save filters whenever they change
+  const updateFilters = (newFilters: FilterState | ((prev: FilterState) => FilterState)) => {
+    setFilters(prev => {
+      const updated = typeof newFilters === 'function' ? newFilters(prev) : newFilters;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      
+      // Force virtualizer recreation
+      setVirtualizerKey(k => k + 1);
+      
+      // Force scroll to top
+      window.scrollTo(0, 0);
+      
+      return updated;
+    });
+  };
+
+  // Add effect to handle window resize
+  createEffect(() => {
+    const handleResize = () => {
+      setVirtualizerKey(k => k + 1);
+    };
+
+    window.addEventListener('resize', handleResize);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+    };
+  });
+
+  // Calculate numeric risk score
+  const getRiskScore = (token: Token): number => {
+    switch (token.riskLevel) {
+      case 'safe':
+        return 2;
+      case 'warning':
+        return 1;
+      case 'danger':
+        return 0;
+      default:
+        return 0;
+    }
+  };
+
+  // Add history storage
+  const [tokenHistories, setTokenHistories] = createSignal<Map<string, any[]>>(new Map());
+
+  // Add function to fetch history
+  const fetchTokenHistory = async (tokenAddress: string) => {
+    try {
+      const response = await fetch(`/api/tokens/${tokenAddress}/history`);
+      const rawText = await response.text();
+      const data = JSON.parse(rawText);
+      
+      if (!data.history || !Array.isArray(data.history)) {
+        throw new Error('Invalid history data received');
+      }
+
+      setTokenHistories(prev => {
+        const next = new Map(prev);
+        next.set(tokenAddress, data.history);
+        return next;
+      });
+    } catch (err) {
+      console.error('Error fetching token history:', err);
+    }
+  };
+
+  // Add effect to fetch history for visible tokens
+  createEffect(() => {
+    const visibleTokens = virtualizer().getVirtualItems().map(row => filteredTokens()[row.index]);
+    visibleTokens.forEach(token => {
+      if (token && !tokenHistories().has(token.tokenAddress)) {
+        fetchTokenHistory(token.tokenAddress);
+      }
+    });
+  });
+
+  // Modify CompactRow to use the fetched history
+  const CompactRow: Component<{ token: Token }> = (props) => {
+    const history = () => tokenHistories().get(props.token.tokenAddress) || [];
+    
+    return (
+      <div class={`w-full bg-black/40 backdrop-blur-sm rd-lg border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 p-4 grid grid-cols-12 gap-4 items-center text-white mb-6`}>
+        <div class="col-span-2">
+          <div class="flex flex-col">
+            <div class="flex items-center gap-1 mb-1">
+              <div class="fw-600 truncate">{props.token.tokenName}</div>
+              <div class="flex shrink-0">
+                <TrendBadge 
+                  trend={calculateTrend(history(), 'liquidity')} 
+                  type="Liq" 
+                />
+                <TrendBadge 
+                  trend={calculateTrend(history(), 'holders')} 
+                  type="Holders"
+                />
+              </div>
+            </div>
+            <div class="text-sm text-gray-400 truncate">{props.token.tokenSymbol}</div>
+          </div>
+        </div>
+        <div class="col-span-2 truncate text-sm">
+          <div class="text-gray-400">Address:</div>
+          <div>{props.token.tokenAddress.slice(0, 8)}...{props.token.tokenAddress.slice(-6)}</div>
+        </div>
+        <div class="col-span-1 text-sm">
+          <div class="text-gray-400">Age:</div>
+          <div>{props.token.tokenAgeHours.toFixed(1)}h</div>
+        </div>
+        <div class="col-span-1 text-sm">
+          <div class="text-gray-400">Liquidity:</div>
+          <div>${props.token.hpLiquidityAmount.toLocaleString()}</div>
+        </div>
+        <div class="col-span-1 text-sm">
+          <div class="text-gray-400">Holders:</div>
+          <div>{props.token.gpHolderCount.toLocaleString()}</div>
+        </div>
+        <div class="col-span-1 text-sm">
+          <div class="text-gray-400">Buy Tax:</div>
+          <div>{props.token.gpBuyTax}%</div>
+        </div>
+        <div class="col-span-1 text-sm">
+          <div class="text-gray-400">Sell Tax:</div>
+          <div>{props.token.gpSellTax}%</div>
+        </div>
+        <div class="col-span-2">
+          <div class={`text-center px-3 py-1 rd-full text-sm fw-600 ${
+            props.token.riskLevel === 'safe' ? 'bg-green-100 text-green-800 border border-green-200' :
+            props.token.riskLevel === 'warning' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
+            'bg-red-100 text-red-800 border border-red-200'
+          }`}>
+            {props.token.hpIsHoneypot ? 'HONEYPOT' : props.token.riskLevel.toUpperCase()}
+          </div>
+        </div>
+        <div class="col-span-1">
+          <button 
+            class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rd text-sm text-white transition-colors"
+            onClick={() => toggleTokenExpansion(props.token.tokenAddress)}
+          >
+            Expand
+          </button>
         </div>
       </div>
-      <div class="col-span-1">
-        <button 
-          class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rd text-sm text-white transition-colors"
-          onClick={() => toggleTokenExpansion(props.token.tokenAddress)}
-        >
-          Expand
-        </button>
-      </div>
-    </div>
-  );
+    );
+  };
 
   // Search function
   const searchToken = (token: Token, query: string) => {
@@ -312,6 +395,48 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
     );
   };
 
+  const calculateTrend = (history: any[], type: 'liquidity' | 'holders') => {
+    // Early return if no history or not enough data points
+    if (!history?.length || history.length < 2) {
+      console.debug(`[Trend ${type}] Not enough data points:`, history?.length);
+      return 'stagnant';
+    }
+    
+    // Sort history by timestamp to ensure correct trend calculation
+    const sortedHistory = [...history].sort((a, b) => a.timestamp - b.timestamp);
+    
+    // Get the values we want to analyze
+    const data = sortedHistory.map(record => ({
+      x: new Date(record.timestamp),
+      y: type === 'liquidity' ? record.totalLiquidity : record.holderCount
+    }));
+
+    // Calculate trend line
+    const xPoints = data.map((_, i) => i);
+    const yPoints = data.map(d => d.y);
+    const xMean = xPoints.reduce((a, b) => a + b, 0) / xPoints.length;
+    const yMean = yPoints.reduce((a, b) => a + b, 0) / yPoints.length;
+    
+    const slope = xPoints.reduce((acc, x, i) => {
+      return acc + (x - xMean) * (yPoints[i] - yMean);
+    }, 0) / xPoints.reduce((acc, x) => acc + Math.pow(x - xMean, 2), 0);
+    
+    // Use same threshold as chart
+    const threshold = 0.01 * yMean;
+    const result = Math.abs(slope) < threshold ? 'stagnant' : slope > 0 ? 'up' : 'down';
+    
+    console.debug(`[Trend ${type}] Calculation:`, {
+      dataPoints: data.length,
+      firstValue: yPoints[0],
+      lastValue: yPoints[yPoints.length - 1],
+      slope,
+      threshold,
+      result
+    });
+    
+    return result;
+  };
+
   return (
     <div class="w-full max-w-[1820px] mx-auto px-6 pb-12 pt-24">
       {/* Filters and View Toggle */}
@@ -321,7 +446,7 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
           <div class="flex gap-8 text-white/90">
             <span>Total tokens: {props.tokens.length}</span>
             <span>Filtered: {filteredTokens().length}</span>
-            <span>Virtual Items: {virtualizer.getVirtualItems().length}</span>
+            <span>Virtual Items: {virtualizer().getVirtualItems().length}</span>
           </div>
         </div>
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -424,11 +549,11 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
                 });
               }}
             >
-              {virtualizer.getVirtualItems().some(row => {
+              {virtualizer().getVirtualItems().some(row => {
                 const token = filteredTokens()[row.index];
                 return token && expandedTokens().has(token.tokenAddress);
               }) ? <List size={18} /> : <Layout size={18} />}
-              <span>{virtualizer.getVirtualItems().some(row => {
+              <span>{virtualizer().getVirtualItems().some(row => {
                 const token = filteredTokens()[row.index];
                 return token && expandedTokens().has(token.tokenAddress);
               }) ? 'Compact View' : 'Detailed View'}</span>
@@ -442,17 +567,19 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
         ref={parentRef} 
         class="relative w-full min-h-screen"
         style={{
-          height: `${virtualizer.getTotalSize() + 500}px`
+          height: `${Math.max(virtualizer().getTotalSize() + 500, window.innerHeight)}px`,
+          'min-height': '100vh'
         }}
       >
         <div
           style={{
             width: '100%',
             position: 'relative',
-            height: '100%'
+            height: '100%',
+            transform: 'translateZ(0)'
           }}
         >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
+          {virtualizer().getVirtualItems().map((virtualRow) => {
             const token = filteredTokens()[virtualRow.index];
             if (!token) return null;
             
@@ -479,43 +606,10 @@ export const TokenEventsList: Component<TokenEventsListProps> = (props) => {
                   <CompactRow token={token} />
                 ) : (
                   <div class="w-full h-full bg-black/40 backdrop-blur-sm rd-lg border border-gray-700/50 hover:border-gray-600/50 transition-all duration-200 relative">
-                    <div class="p-6 relative z-20">
-                      <div class="flex justify-end mb-4">
-                        <button 
-                          class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rd text-sm text-white transition-colors"
-                          onClick={() => toggleTokenExpansion(token.tokenAddress)}
-                        >
-                          Collapse
-                        </button>
-                      </div>
-                      <div class="flex gap-4 mb-4">
-                        <div class="bg-blue-100 text-blue-800 border border-blue-200 px-3 py-1 rd-full text-sm fw-600">
-                          Age: {token.tokenAgeHours.toFixed(1)}h
-                        </div>
-                        <div class="bg-purple-100 text-purple-800 border border-purple-200 px-3 py-1 rd-full text-sm fw-600">
-                          Liquidity: ${token.hpLiquidityAmount.toLocaleString()}
-                        </div>
-                        <div class="bg-indigo-100 text-indigo-800 border border-indigo-200 px-3 py-1 rd-full text-sm fw-600">
-                          Holders: {token.gpHolderCount.toLocaleString()}
-                        </div>
-                        <div class={`px-3 py-1 rd-full text-sm fw-600 ${
-                          token.riskLevel === 'safe' ? 'bg-green-100 text-green-800 border border-green-200' :
-                          token.riskLevel === 'warning' ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' :
-                          'bg-red-100 text-red-800 border border-red-200'
-                        }`}>
-                          {token.hpIsHoneypot ? 'HONEYPOT' : token.riskLevel.toUpperCase()}
-                        </div>
-                      </div>
-                      <TokenEventCard token={token} />
-                      <div class="mt-4 flex justify-end">
-                        <button 
-                          class="px-3 py-1 bg-gray-700 hover:bg-gray-600 rd text-sm text-white transition-colors"
-                          onClick={() => toggleTokenExpansion(token.tokenAddress)}
-                        >
-                          Collapse
-                        </button>
-                      </div>
-                    </div>
+                    <TokenEventCard 
+                      token={token} 
+                      history={tokenHistories().get(token.tokenAddress) || []}
+                    />
                   </div>
                 )}
               </div>

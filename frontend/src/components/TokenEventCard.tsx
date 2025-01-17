@@ -242,6 +242,26 @@ export const TokenEventCard: Component<TokenCardProps> = (props) => {
           <div class="flex items-center gap-2">
             <Activity size={16} class="text-blue-400" />
             <h3 class="text-base fw-600 text-white">Liquidity History</h3>
+            <span class="text-xs text-gray-400">
+              (Trend: {(() => {
+                const historyData = history();
+                if (!historyData || historyData.length < 2) return 'stagnant';
+                const data = historyData.map(record => ({
+                  x: new Date(record.timestamp),
+                  y: record.totalLiquidity
+                }));
+                const xPoints = data.map((_, i) => i);
+                const yPoints = data.map(d => d.y);
+                const xMean = xPoints.reduce((a, b) => a + b, 0) / xPoints.length;
+                const yMean = yPoints.reduce((a, b) => a + b, 0) / yPoints.length;
+                const slope = xPoints.reduce((acc, x, i) => {
+                  return acc + (x - xMean) * (yPoints[i] - yMean);
+                }, 0) / xPoints.reduce((acc, x) => acc + Math.pow(x - xMean, 2), 0);
+                const threshold = 0.01 * yMean;
+                if (Math.abs(slope) < threshold) return 'stagnant';
+                return slope > 0 ? 'up' : 'down';
+              })()})
+            </span>
           </div>
           <div class="h-[200px] bg-black/20 rd p-2">
             <TokenChart token={props.token} history={history()} type="liquidity" />
@@ -253,6 +273,26 @@ export const TokenEventCard: Component<TokenCardProps> = (props) => {
           <div class="flex items-center gap-2">
             <Users size={16} class="text-indigo-400" />
             <h3 class="text-base fw-600 text-white">Holders History</h3>
+            <span class="text-xs text-gray-400">
+              (Trend: {(() => {
+                const historyData = history();
+                if (!historyData || historyData.length < 2) return 'stagnant';
+                const data = historyData.map(record => ({
+                  x: new Date(record.timestamp),
+                  y: record.holderCount
+                }));
+                const xPoints = data.map((_, i) => i);
+                const yPoints = data.map(d => d.y);
+                const xMean = xPoints.reduce((a, b) => a + b, 0) / xPoints.length;
+                const yMean = yPoints.reduce((a, b) => a + b, 0) / yPoints.length;
+                const slope = xPoints.reduce((acc, x, i) => {
+                  return acc + (x - xMean) * (yPoints[i] - yMean);
+                }, 0) / xPoints.reduce((acc, x) => acc + Math.pow(x - xMean, 2), 0);
+                const threshold = 0.01 * yMean;
+                if (Math.abs(slope) < threshold) return 'stagnant';
+                return slope > 0 ? 'up' : 'down';
+              })()})
+            </span>
           </div>
           <div class="h-[200px] bg-black/20 rd p-2">
             <TokenChart token={props.token} history={history()} type="holders" />

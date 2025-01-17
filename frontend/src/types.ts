@@ -102,6 +102,15 @@ export interface Token {
   liq180: number;
   liq190: number;
   liq200: number;
+
+  history?: TokenHistory[];
+}
+
+export interface TokenHistory {
+  timestamp: number;
+  totalLiquidity: number;
+  holderCount: number;
+  lpHolderCount: number;
 }
 
 export type RiskLevel = 'safe' | 'warning' | 'danger';
@@ -141,7 +150,7 @@ export interface PerformanceMetrics {
 // Component Props Types
 export interface TokenCardProps {
   token: Token;
-  style?: { [key: string]: string | number };
+  history?: any[];
 }
 
 export interface SectionHeaderProps {
